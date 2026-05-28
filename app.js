@@ -96,6 +96,7 @@
       updatedAt: "",
       loading: false,
     },
+    auth: { email: "", loading: false },
     cart: [],
     message: "",
     suppliers: [
@@ -180,6 +181,14 @@
 
   function isClient() {
     return state.profileRole === "client";
+  }
+
+  function isDemoMode() {
+    return !client;
+  }
+
+  function isRemoteMode() {
+    return Boolean(client);
   }
 
   function roleLabel() {
@@ -468,27 +477,49 @@
   }
 
   async function loadRemoteData() {
-    if (!client || !state.session) return;
-    const [suppliers, products, catalogs] = await Promise.all([
-      client.from("suppliers").select("*").order("name"),
-      client.from("products").select("*").order("updated_at", { ascending: false }),
-      client.from("catalog_files").select("*").order("created_at", { ascending: false }),
+    if (!client) return;
+    const isAuthenticated = Boolean(state.session);
+    const productSource = isAuthenticated ? "products" : "client_products";
+    const [suppliers, products, catalogs, images] = await Promise.all([
+      isAuthenticated ? client.from("suppliers").select("*").order("name") : Promise.resolve({ data: [], error: null }),
+      client.from(productSource).select("*").order("updated_at", { ascending: false }),
+      isAuthenticated ? client.from("catalog_files").select("*").order("created_at", { ascending: false }) : Promise.resolve({ data: [], error: null }),
+      client.from("product_images").select("product_id, public_url, is_primary, created_at").order("created_at", { ascending: true }),
     ]);
     const settings = await client.from("catalog_settings").select("key, value").in("key", ["usdToBrl", "usdToCny", "multiplierFactor", "markupPercent"]);
-    const profile = await client.from("users").select("role").eq("id", state.session.user.id).maybeSingle();
-    if (profile.data?.role) state.profileRole = profile.data.role;
-    else state.profileRole = "viewer";
+    if (isAuthenticated) {
+      const profile = await client.from("users").select("role").eq("id", state.session.user.id).maybeSingle();
+      if (profile.data?.role) state.profileRole = profile.data.role;
+      else state.profileRole = "viewer";
+    } else {
+      state.profileRole = "client";
+    }
     if (settings.data?.length) {
       for (const item of settings.data) state.settings[item.key] = Number(item.value || state.settings[item.key]);
       syncConverterFromUsd(state.converter.usd);
     }
-    const error = suppliers.error || products.error || catalogs.error || settings.error;
+    const error = suppliers.error || products.error || catalogs.error || images.error || settings.error;
     if (error) {
       setMessage(error.message);
       return;
     }
+    const galleryByProduct = new Map();
+    for (const image of images.data || []) {
+      if (!image.public_url) continue;
+      if (!galleryByProduct.has(image.product_id)) galleryByProduct.set(image.product_id, []);
+      galleryByProduct.get(image.product_id).push(image.public_url);
+    }
     state.suppliers = suppliers.data || [];
-    state.products = (products.data || []).map((product) => ({ ...product, tags: Array.isArray(product.tags) ? product.tags : [] }));
+    state.products = (products.data || []).map((product) => {
+      const gallery = galleryByProduct.get(product.id) || [];
+      const primaryImage = gallery[0] || product.image_url || "";
+      return {
+        ...product,
+        tags: Array.isArray(product.tags) ? product.tags : [],
+        gallery: gallery.length ? gallery : (product.image_url ? [product.image_url] : []),
+        image_url: primaryImage,
+      };
+    });
     state.catalogs = catalogs.data || [];
     render();
   }
@@ -514,18 +545,18 @@
     state.session = session.data.session;
     if (state.session) {
       await ensureUserProfile();
-      await loadRemoteData();
     } else {
       state.profileRole = "client";
     }
+    await loadRemoteData();
     client.auth.onAuthStateChange(async (_event, sessionValue) => {
       state.session = sessionValue;
       if (sessionValue) {
         await ensureUserProfile();
-        await loadRemoteData();
       } else {
         state.profileRole = "client";
       }
+      await loadRemoteData();
       render();
     });
   }
@@ -588,6 +619,27 @@
   }
 
   function authPanel() {
+    if (isRemoteMode()) {
+      if (state.session) {
+        return `
+          <div class="auth-box">
+            <small>Conta conectada</small>
+            <span class="role-pill">${roleLabel()}</span>
+            <strong class="auth-email">${escapeHtml(state.session.user.email || "Usuario")}</strong>
+            <button type="button" data-action="logout">${withIcon("log-out", "Sair")}</button>
+          </div>`;
+      }
+      return `
+        <div class="auth-box">
+          <small>Catalogo publico</small>
+          <span class="role-pill">Cliente</span>
+          <form id="login-form" class="login-form">
+            <input name="email" type="email" autocomplete="email" placeholder="Email Adm/Vendedor" value="${escapeHtml(state.auth.email)}">
+            <input name="password" type="password" autocomplete="current-password" placeholder="Senha">
+            <button type="submit" ${state.auth.loading ? "disabled" : ""}>${withIcon("log-in", state.auth.loading ? "Entrando" : "Entrar")}</button>
+          </form>
+        </div>`;
+    }
     return `
       <div class="auth-box">
         <small>Perfil de acesso</small>
@@ -908,6 +960,7 @@
 
   async function saveSupplier(form) {
     if (!isEditor()) return setMessage("Seu perfil permite apenas visualizar e montar carrinho.");
+    if (isRemoteMode() && !state.session) return setMessage("Entre como Adm para salvar fornecedores no banco.");
     const data = Object.fromEntries(new FormData(form).entries());
     if (!data.name?.trim()) return;
     if (!client || !state.session) {
@@ -926,6 +979,7 @@
 
   async function saveProduct(form) {
     if (!isEditor()) return setMessage("Seu perfil permite apenas visualizar e montar carrinho.");
+    if (isRemoteMode() && !state.session) return setMessage("Entre como Adm para cadastrar produtos no banco.");
     const data = Object.fromEntries(new FormData(form).entries());
     const imageFile = form.elements.image.files[0];
     let imageUrl = "";
@@ -981,6 +1035,7 @@
 
   async function uploadCatalog(form) {
     if (!isEditor()) return setMessage("Seu perfil permite apenas visualizar e montar carrinho.");
+    if (isRemoteMode() && !state.session) return setMessage("Entre como Adm para enviar arquivos ao Storage.");
     const data = Object.fromEntries(new FormData(form).entries());
     const file = form.elements.pdf.files[0];
     if (!file || !data.supplier_id) return;
@@ -1006,11 +1061,45 @@
 
   function switchProfile(role) {
     if (!profileOptions.some(([value]) => value === role)) return;
+    if (isRemoteMode() && !state.session && role !== "client") {
+      state.message = "No app online, Adm e Vendedor precisam entrar com email e senha.";
+      render();
+      return;
+    }
     state.profileRole = role;
-    state.session = null;
+    if (isDemoMode()) state.session = null;
     if (!isEditor() && ["new-product", "suppliers", "upload", "settings"].includes(state.view)) state.view = "dashboard";
     state.message = "";
     render();
+  }
+
+  async function login(form) {
+    if (!client) return;
+    const data = Object.fromEntries(new FormData(form).entries());
+    state.auth.email = data.email || "";
+    state.auth.loading = true;
+    render();
+    const response = await client.auth.signInWithPassword({
+      email: data.email,
+      password: data.password,
+    });
+    state.auth.loading = false;
+    if (response.error) {
+      setMessage(response.error.message);
+      return;
+    }
+    state.session = response.data.session;
+    await ensureUserProfile();
+    await loadRemoteData();
+  }
+
+  async function logout() {
+    if (!client) return;
+    await client.auth.signOut();
+    state.session = null;
+    state.profileRole = "client";
+    if (["new-product", "suppliers", "upload", "settings"].includes(state.view)) state.view = "dashboard";
+    await loadRemoteData();
   }
 
   function accessDenied() {
@@ -1099,6 +1188,7 @@
 
   function saveSettings(form) {
     if (!isEditor()) return setMessage("Apenas o perfil Adm pode alterar configuracoes.");
+    if (isRemoteMode() && !state.session) return setMessage("Entre como Adm para alterar configuracoes no banco.");
     const data = Object.fromEntries(new FormData(form).entries());
     state.settings = {
       usdToBrl: Number(data.usdToBrl || state.settings.usdToBrl),
@@ -1138,6 +1228,7 @@
 
   async function saveEditedProduct(form) {
     if (!isEditor()) return setMessage("Apenas o perfil Adm pode editar produtos.");
+    if (isRemoteMode() && !state.session) return setMessage("Entre como Adm para editar produtos no banco.");
     const product = state.products.find((item) => item.id === state.editingProductId);
     if (!product) return;
     const data = Object.fromEntries(new FormData(form).entries());
@@ -1230,7 +1321,7 @@
   async function saveQuote() {
     if (!state.cart.length) return;
     if (!client || !state.session) {
-      setMessage("Orcamento montado no modo demo. Conecte ao Supabase para salvar no banco.");
+      setMessage(client ? "Entre como Vendedor para salvar o orcamento no banco." : "Orcamento montado no modo demo. Conecte ao Supabase para salvar no banco.");
       return;
     }
     const quote = await client.from("quotes").insert({
@@ -1304,6 +1395,8 @@
     root.querySelector("#search-input")?.addEventListener("input", (event) => { state.query = event.target.value; scheduleProductResultsRefresh(); });
     root.querySelectorAll("[data-filter]").forEach((input) => input.addEventListener("input", (event) => { state.filters[input.dataset.filter] = event.target.value; scheduleProductResultsRefresh(); }));
     root.querySelectorAll("[data-role-switch]").forEach((button) => button.addEventListener("click", () => switchProfile(button.dataset.roleSwitch)));
+    root.querySelector("#login-form")?.addEventListener("submit", (event) => { event.preventDefault(); login(event.currentTarget); });
+    root.querySelector("[data-action='logout']")?.addEventListener("click", logout);
     root.querySelector("#supplier-form")?.addEventListener("submit", (event) => { event.preventDefault(); saveSupplier(event.currentTarget); });
     root.querySelector("#product-form")?.addEventListener("submit", (event) => { event.preventDefault(); saveProduct(event.currentTarget); });
     root.querySelector("#upload-form")?.addEventListener("submit", (event) => { event.preventDefault(); uploadCatalog(event.currentTarget); });

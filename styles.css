@@ -190,6 +190,21 @@ nav button.active, nav button:hover {
   color: #fff;
 }
 .auth-box button { background: #fff; color: #111827; }
+.auth-email {
+  color: #fff;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.login-form {
+  display: grid;
+  gap: 7px;
+}
+.login-form button {
+  justify-content: center;
+  gap: 7px;
+}
 .profile-switch {
   display: grid;
   grid-template-columns: 1fr;

@@ -14,6 +14,7 @@ Abra `index.html` no navegador. Sem Supabase configurado, o app inicia em modo d
 ```text
 supabase/migrations/202605280001_initial_catalog_schema.sql
 supabase/migrations/202605280003_data_api_grants.sql
+supabase/migrations/202605280004_public_catalog_view.sql
 imports/syt-05-2026/syt_seed.sql
 imports/syt-05-2026/syt_tag_enrichment.sql
 ```
@@ -37,7 +38,7 @@ Use apenas chave publica no frontend. Nunca coloque `service_role` neste arquivo
 Depois disso, publique a alteracao no GitHub Pages com:
 
 ```powershell
-git add supabase-config.js README.md supabase/migrations/202605280003_data_api_grants.sql
+git add supabase-config.js README.md supabase/migrations/202605280003_data_api_grants.sql supabase/migrations/202605280004_public_catalog_view.sql
 git commit -m "Configure Supabase setup instructions"
 git push
 ```
