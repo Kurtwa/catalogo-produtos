@@ -9,8 +9,17 @@ Abra `index.html` no navegador. Sem Supabase configurado, o app inicia em modo d
 ## Conectar ao Supabase
 
 1. Crie um projeto no Supabase.
-2. No SQL Editor, rode `supabase/migrations/202605280001_initial_catalog_schema.sql`.
-3. Em `supabase-config.js`, preencha:
+2. No SQL Editor, rode nesta ordem:
+
+```text
+supabase/migrations/202605280001_initial_catalog_schema.sql
+supabase/migrations/202605280003_data_api_grants.sql
+imports/syt-05-2026/syt_seed.sql
+imports/syt-05-2026/syt_tag_enrichment.sql
+```
+
+3. Em Project Settings > API, copie a Project URL e a chave publica `anon`/`publishable`.
+4. Em `supabase-config.js`, preencha:
 
 ```js
 window.CATALOGO_SUPABASE = {
@@ -24,6 +33,14 @@ window.CATALOGO_SUPABASE = {
 ```
 
 Use apenas chave publica no frontend. Nunca coloque `service_role` neste arquivo.
+
+Depois disso, publique a alteracao no GitHub Pages com:
+
+```powershell
+git add supabase-config.js README.md supabase/migrations/202605280003_data_api_grants.sql
+git commit -m "Configure Supabase setup instructions"
+git push
+```
 
 ## Publicar online
 
