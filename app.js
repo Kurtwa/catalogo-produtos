@@ -110,6 +110,8 @@
     },
     auth: { email: "", loading: false },
     cart: [],
+    cartDrawerOpen: false,
+    lastAddedProductId: "",
     message: "",
     suppliers: [
       { id: "sup-1", name: "Ningbo Equipamentos", country: "China", contact_name: "Lina Zhou", email: "sales@ningbo.example" },
@@ -594,25 +596,30 @@
             ${isEditor() ? navButton("suppliers", "Fornecedores", navIcons.suppliers) : ""}
             ${isEditor() ? navButton("upload", "Upload PDF", navIcons.upload) : ""}
             ${isEditor() ? navButton("settings", "Configuracoes", navIcons.settings) : ""}
-            ${navButton("cart", `Carrinho (${cartCount()})`, navIcons.cart)}
+            ${cartNavButton(navIcons.cart)}
           </nav>
           ${authPanel()}
         </aside>
         <main class="content">
           <header class="topbar">
             <div><h1>${escapeHtml(pageTitle())}</h1></div>
-            ${isEditor() ? `<button class="primary icon-only" data-view="new-product" title="Cadastrar produto" aria-label="Cadastrar produto">${iconOnly("package-plus", "Cadastrar produto")}</button>` : `<button class="primary icon-only" data-view="cart" title="Ver carrinho" aria-label="Ver carrinho">${iconOnly("shopping-cart", "Ver carrinho")}</button>`}
+            ${isEditor() ? `<button class="primary icon-only" data-view="new-product" title="Cadastrar produto" aria-label="Cadastrar produto">${iconOnly("package-plus", "Cadastrar produto")}</button>` : `<button class="primary icon-only" data-cart-open title="Ver carrinho" aria-label="Ver carrinho">${iconOnly("shopping-cart", "Ver carrinho")}${cartCount() ? `<span class="cart-count">${cartCount()}</span>` : ""}</button>`}
           </header>
           ${isClient() ? "" : currencyBar()}
           ${state.message ? `<div class="notice" data-clear-message>${escapeHtml(state.message)}</div>` : ""}
           ${content}
           ${editProductModal()}
+          ${cartDrawer()}
         </main>
       </div>`;
   }
 
   function navButton(view, label, iconName) {
     return `<button class="${state.view === view ? "active" : ""}" data-view="${view}">${iconName ? icon(iconName) : ""}<span>${escapeHtml(label)}</span></button>`;
+  }
+
+  function cartNavButton(iconName) {
+    return `<button type="button" class="${state.cartDrawerOpen ? "active" : ""}" data-cart-open>${iconName ? icon(iconName) : ""}<span>Carrinho (${cartCount()})</span></button>`;
   }
 
   function currencyBar() {
@@ -801,7 +808,7 @@
           <div class="detail-actions">
             ${isEditor() ? `<button class="primary icon-only" data-edit-product="${product.id}" title="Editar produto" aria-label="Editar produto">${iconOnly("pencil", "Editar produto")}</button>` : ""}
             ${cartButton(product.id, "Adicionar ao carrinho")}
-            <button class="icon-only" data-view="cart" title="Ver carrinho" aria-label="Ver carrinho">${iconOnly("shopping-bag", "Ver carrinho")}</button>
+            <button class="icon-only" data-cart-open title="Ver carrinho" aria-label="Ver carrinho">${iconOnly("shopping-bag", "Ver carrinho")}${cartCount() ? `<span class="cart-count">${cartCount()}</span>` : ""}</button>
           </div>
           <div class="info-grid">
             ${info("Codigo", product.code)}
@@ -1128,19 +1135,38 @@
     const existing = state.cart.find((item) => item.product_id === productId);
     if (existing) existing.quantity += 1;
     else state.cart.push({ product_id: productId, quantity: 1, note: "" });
+    state.cartDrawerOpen = true;
+    state.lastAddedProductId = productId;
     state.message = `${product.code || product.name} adicionado ao carrinho.`;
     render();
+    window.setTimeout(() => {
+      if (state.lastAddedProductId !== productId) return;
+      state.lastAddedProductId = "";
+      root.querySelectorAll(".cart-item.just-added").forEach((item) => item.classList.remove("just-added"));
+    }, 900);
   }
 
   function updateCart(productId, quantity) {
     const item = state.cart.find((cartItem) => cartItem.product_id === productId);
     if (!item) return;
     item.quantity = Math.max(1, Number(quantity || 1));
+    state.cartDrawerOpen = true;
     render();
   }
 
   function removeFromCart(productId) {
     state.cart = state.cart.filter((item) => item.product_id !== productId);
+    state.cartDrawerOpen = true;
+    render();
+  }
+
+  function openCartDrawer() {
+    state.cartDrawerOpen = true;
+    render();
+  }
+
+  function closeCartDrawer() {
+    state.cartDrawerOpen = false;
     render();
   }
 
@@ -1172,12 +1198,42 @@
       </section>`;
   }
 
+  function cartDrawer() {
+    const rows = state.cart.map((item) => ({ ...item, product: state.products.find((product) => product.id === item.product_id) })).filter((item) => item.product);
+    const totalUsd = rows.reduce((sum, item) => sum + calc(item.product).original_usd * item.quantity, 0);
+    const totalBrl = rows.reduce((sum, item) => sum + calc(item.product).original_brl * item.quantity, 0);
+    const clientMode = isClient();
+    return `
+      <div class="cart-drawer-shell ${state.cartDrawerOpen ? "open" : ""}" aria-hidden="${state.cartDrawerOpen ? "false" : "true"}" ${state.cartDrawerOpen ? "" : "inert"}>
+        <button class="cart-drawer-backdrop" type="button" data-cart-close aria-label="Fechar carrinho"></button>
+        <aside class="cart-drawer" role="dialog" aria-modal="true" aria-label="Carrinho de orcamento">
+          <header class="cart-drawer-head">
+            <div>
+              <small>${clientMode ? "Solicitacao" : "Orcamento"}</small>
+              <h2>Carrinho</h2>
+            </div>
+            <button class="icon-only" type="button" data-cart-close title="Fechar" aria-label="Fechar">${iconOnly("x", "Fechar")}</button>
+          </header>
+          <div class="cart-drawer-body">
+            ${rows.length ? `<div class="cart-list">${rows.map(cartItem).join("")}</div>` : '<p class="hint">Nenhum produto no carrinho ainda.</p>'}
+          </div>
+          <footer class="cart-drawer-summary">
+            ${info("Itens", cartCount())}
+            ${clientMode ? info("Valores", "Sob consulta") : `${info("Total USD", money(totalUsd, "USD"))}${info("Conversao BRL", money(totalBrl, "BRL"))}`}
+            ${clientMode ? "" : `<button class="primary icon-only" data-action="save-quote" title="Salvar orcamento" aria-label="Salvar orcamento" ${rows.length ? "" : "disabled"}>${iconOnly("save", "Salvar orcamento")}</button>`}
+            <button class="primary icon-only" data-action="copy-quote" title="${clientMode ? "Copiar solicitacao" : "Copiar orcamento"}" aria-label="${clientMode ? "Copiar solicitacao" : "Copiar orcamento"}" ${rows.length ? "" : "disabled"}>${iconOnly("copy", clientMode ? "Copiar solicitacao" : "Copiar orcamento")}</button>
+            <button class="icon-only" data-action="clear-cart" title="Limpar carrinho" aria-label="Limpar carrinho" ${rows.length ? "" : "disabled"}>${iconOnly("trash-2", "Limpar carrinho")}</button>
+          </footer>
+        </aside>
+      </div>`;
+  }
+
   function cartItem(item) {
     const product = item.product;
     const computed = calc(product);
     const thumb = product.image_url ? `<img src="${escapeHtml(product.image_url)}" alt="${escapeHtml(product.name)}">` : `<span>${escapeHtml(product.name.slice(0, 2).toUpperCase())}</span>`;
     return `
-      <article class="cart-item">
+      <article class="cart-item ${state.lastAddedProductId === product.id ? "just-added" : ""}">
         <div class="row-thumb">${thumb}</div>
         <div><strong>${escapeHtml(product.code)} · ${escapeHtml(product.name)}</strong><small>${escapeHtml(product.category)}${isClient() ? "" : ` · ${money(computed.original_usd, "USD")} un.`}</small></div>
         <input type="number" min="1" value="${item.quantity}" data-cart-qty="${product.id}" aria-label="Quantidade">
@@ -1394,6 +1450,7 @@
     modal.querySelector("[data-detail-modal-panel]")?.addEventListener("click", (event) => event.stopPropagation());
     bindResultEvents(modal);
     modal.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => { state.view = button.dataset.view; closeProductDetails(); render(); }));
+    modal.querySelectorAll("[data-cart-open]").forEach((button) => button.addEventListener("click", () => { closeProductDetails(); openCartDrawer(); }));
   }
 
   function bindEvents() {
@@ -1401,6 +1458,8 @@
     bindResultEvents(root);
     root.querySelectorAll("[data-cart-remove]").forEach((button) => button.addEventListener("click", () => removeFromCart(button.dataset.cartRemove)));
     root.querySelectorAll("[data-cart-qty]").forEach((input) => input.addEventListener("input", () => updateCart(input.dataset.cartQty, input.value)));
+    root.querySelectorAll("[data-cart-open]").forEach((button) => button.addEventListener("click", openCartDrawer));
+    root.querySelectorAll("[data-cart-close]").forEach((button) => button.addEventListener("click", closeCartDrawer));
     root.querySelectorAll("[data-converter]").forEach((input) => input.addEventListener("input", () => updateConverter(input.dataset.converter, input.value)));
     root.querySelector("[data-action='refresh-rates']")?.addEventListener("click", () => refreshRates());
     root.querySelector("[data-clear-message]")?.addEventListener("click", () => { state.message = ""; render(); });
@@ -1419,7 +1478,7 @@
       if (event.target === element || element.tagName === "BUTTON") closeEditProduct();
     }));
     root.querySelector("[data-modal-panel]")?.addEventListener("click", (event) => event.stopPropagation());
-    root.querySelector("[data-action='clear-cart']")?.addEventListener("click", () => { state.cart = []; render(); });
+    root.querySelector("[data-action='clear-cart']")?.addEventListener("click", () => { state.cart = []; state.cartDrawerOpen = true; render(); });
     root.querySelector("[data-action='save-quote']")?.addEventListener("click", saveQuote);
     root.querySelector("[data-action='copy-quote']")?.addEventListener("click", async () => {
       const text = quoteText();
