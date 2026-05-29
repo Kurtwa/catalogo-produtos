@@ -3,6 +3,18 @@
   const isConfigured = Boolean(config.url && config.anonKey && window.supabase);
   const client = isConfigured ? window.supabase.createClient(config.url, config.anonKey) : null;
   const buckets = config.buckets || { catalogs: "catalog-files", productImages: "product-images" };
+  const tables = {
+    users: "catalog_users",
+    suppliers: "catalog_suppliers",
+    settings: "catalog_settings",
+    catalogs: "catalog_files",
+    products: "catalog_products",
+    clientProducts: "catalog_client_products",
+    images: "catalog_product_images",
+    quotes: "catalog_quotes",
+    quoteItems: "catalog_quote_items",
+    ...(config.tables || {}),
+  };
   let productRefreshTimer;
   const defaultSettings = {
     usdToBrl: Number(config.usdToBrl || 5.25),
@@ -479,16 +491,16 @@
   async function loadRemoteData() {
     if (!client) return;
     const isAuthenticated = Boolean(state.session);
-    const productSource = isAuthenticated ? "products" : "client_products";
+    const productSource = isAuthenticated ? tables.products : tables.clientProducts;
     const [suppliers, products, catalogs, images] = await Promise.all([
-      isAuthenticated ? client.from("suppliers").select("*").order("name") : Promise.resolve({ data: [], error: null }),
+      isAuthenticated ? client.from(tables.suppliers).select("*").order("name") : Promise.resolve({ data: [], error: null }),
       client.from(productSource).select("*").order("updated_at", { ascending: false }),
-      isAuthenticated ? client.from("catalog_files").select("*").order("created_at", { ascending: false }) : Promise.resolve({ data: [], error: null }),
-      client.from("product_images").select("product_id, public_url, is_primary, created_at").order("created_at", { ascending: true }),
+      isAuthenticated ? client.from(tables.catalogs).select("*").order("created_at", { ascending: false }) : Promise.resolve({ data: [], error: null }),
+      client.from(tables.images).select("product_id, public_url, is_primary, created_at").order("created_at", { ascending: true }),
     ]);
-    const settings = await client.from("catalog_settings").select("key, value").in("key", ["usdToBrl", "usdToCny", "multiplierFactor", "markupPercent"]);
+    const settings = await client.from(tables.settings).select("key, value").in("key", ["usdToBrl", "usdToCny", "multiplierFactor", "markupPercent"]);
     if (isAuthenticated) {
-      const profile = await client.from("users").select("role").eq("id", state.session.user.id).maybeSingle();
+      const profile = await client.from(tables.users).select("role").eq("id", state.session.user.id).maybeSingle();
       if (profile.data?.role) state.profileRole = profile.data.role;
       else state.profileRole = "viewer";
     } else {
@@ -526,12 +538,12 @@
 
   async function ensureUserProfile() {
     if (!client || !state.session) return;
-    const existing = await client.from("users").select("id, role").eq("id", state.session.user.id).maybeSingle();
+    const existing = await client.from(tables.users).select("id, role").eq("id", state.session.user.id).maybeSingle();
     if (existing.data) {
       state.profileRole = existing.data.role || "viewer";
       return;
     }
-    await client.from("users").insert({
+    await client.from(tables.users).insert({
       id: state.session.user.id,
       email: state.session.user.email,
       role: "viewer",
@@ -969,7 +981,7 @@
       render();
       return;
     }
-    const response = await client.from("suppliers").insert({ ...data, created_by: state.session.user.id });
+    const response = await client.from(tables.suppliers).insert({ ...data, created_by: state.session.user.id });
     if (response.error) setMessage(response.error.message);
     else {
       state.message = "Fornecedor salvo.";
@@ -1023,7 +1035,7 @@
       render();
       return;
     }
-    const response = await client.from("products").insert(payload).select().single();
+    const response = await client.from(tables.products).insert(payload).select().single();
     if (response.error) setMessage(response.error.message);
     else {
       state.selectedProductId = response.data.id;
@@ -1051,7 +1063,7 @@
       setMessage(upload.error.message);
       return;
     }
-    const response = await client.from("catalog_files").insert({ supplier_id: data.supplier_id, file_name: file.name, file_path: path, mime_type: file.type, file_size: file.size, created_by: state.session.user.id });
+    const response = await client.from(tables.catalogs).insert({ supplier_id: data.supplier_id, file_name: file.name, file_path: path, mime_type: file.type, file_size: file.size, created_by: state.session.user.id });
     if (response.error) setMessage(response.error.message);
     else {
       state.message = "PDF importado e registrado.";
@@ -1200,7 +1212,7 @@
     window.localStorage?.setItem("catalogo-settings", JSON.stringify(state.settings));
     if (client && state.session) {
       const rows = Object.entries(state.settings).map(([key, value]) => ({ key, value }));
-      client.from("catalog_settings").upsert(rows).then(({ error }) => {
+      client.from(tables.settings).upsert(rows).then(({ error }) => {
         if (error) setMessage(error.message);
       });
     }
@@ -1272,7 +1284,7 @@
     product.image_url = gallery[0] || product.image_url || "";
 
     if (client && state.session) {
-      const response = await client.from("products").update({
+      const response = await client.from(tables.products).update({
         name: product.name,
         code: product.code,
         supplier_id: product.supplier_id,
@@ -1295,7 +1307,7 @@
         return;
       }
       if (imageRows.length) {
-        const imageResponse = await client.from("product_images").insert(imageRows);
+        const imageResponse = await client.from(tables.images).insert(imageRows);
         if (imageResponse.error) {
           setMessage(imageResponse.error.message);
           return;
@@ -1324,7 +1336,7 @@
       setMessage(client ? "Entre como Vendedor para salvar o orcamento no banco." : "Orcamento montado no modo demo. Conecte ao Supabase para salvar no banco.");
       return;
     }
-    const quote = await client.from("quotes").insert({
+    const quote = await client.from(tables.quotes).insert({
       status: "draft",
       currency: "USD",
       notes: "Criado pelo carrinho do catalogo.",
@@ -1345,7 +1357,7 @@
         exchange_rate: product?.exchange_rate || null,
       };
     });
-    const savedItems = await client.from("quote_items").insert(items);
+    const savedItems = await client.from(tables.quoteItems).insert(items);
     if (savedItems.error) {
       setMessage(savedItems.error.message);
       return;

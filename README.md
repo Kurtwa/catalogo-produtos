@@ -8,23 +8,25 @@ Abra `index.html` no navegador. Sem Supabase configurado, o app inicia em modo d
 
 ## Conectar ao Supabase
 
-1. Crie um projeto no Supabase.
+1. Crie ou conecte um projeto no Supabase. O projeto atual usado no deploy e `gr8-importacao`, URL `https://jxcngmpytkskjekkkvfz.supabase.co`.
 2. No SQL Editor, rode nesta ordem:
 
 ```text
-supabase/migrations/202605280001_initial_catalog_schema.sql
-supabase/migrations/202605280003_data_api_grants.sql
-supabase/migrations/202605280004_public_catalog_view.sql
-imports/syt-05-2026/syt_seed.sql
-imports/syt-05-2026/syt_tag_enrichment.sql
+supabase/migrations/202605290001_isolated_catalog_schema.sql
+supabase/migrations/202605290002_catalog_storage.sql
+imports/syt-05-2026/syt_seed_catalog.sql
+imports/syt-05-2026/syt_tag_enrichment_catalog.sql
+imports/syt-05-2026/syt_image_urls_catalog.sql
 ```
 
-3. Em Project Settings > API, copie a Project URL e a chave publica `anon`/`publishable`.
-4. Em `supabase-config.js`, preencha:
+O schema usa tabelas isoladas com prefixo `catalog_` para nao interferir em outras tabelas existentes do projeto Supabase.
+
+3. Em Project Settings > API, copie a chave publica `anon`/`publishable`.
+4. Em `supabase-config.js`, preencha a chave publica:
 
 ```js
 window.CATALOGO_SUPABASE = {
-  url: "https://SEU-PROJETO.supabase.co",
+  url: "https://jxcngmpytkskjekkkvfz.supabase.co",
   anonKey: "SUA_CHAVE_PUBLICA_ANON_OU_PUBLISHABLE",
   buckets: {
     catalogs: "catalog-files",
@@ -38,8 +40,8 @@ Use apenas chave publica no frontend. Nunca coloque `service_role` neste arquivo
 Depois disso, publique a alteracao no GitHub Pages com:
 
 ```powershell
-git add supabase-config.js README.md supabase/migrations/202605280003_data_api_grants.sql supabase/migrations/202605280004_public_catalog_view.sql
-git commit -m "Configure Supabase setup instructions"
+git add supabase-config.js README.md supabase/migrations imports/syt-05-2026/syt_*_catalog.sql imports/syt-05-2026/syt_image_urls_catalog.sql
+git commit -m "Connect catalog to Supabase"
 git push
 ```
 
@@ -67,7 +69,7 @@ Arquivos locais de auditoria, OCR, Excel extraido e referencias visuais ficam fo
 
 ## Preparacao para IA/embeddings
 
-A tabela `products` inclui a coluna `embedding vector(1536)` e `search_vector`. Para ativar embeddings depois:
+A tabela `catalog_products` inclui a coluna `embedding vector(1536)` e `search_vector`. Para ativar embeddings depois:
 
 1. Habilite a extensao `vector` no Supabase.
 2. Gere embeddings a partir de nome, descricao, specs, categoria e tags.
@@ -142,11 +144,11 @@ No modo demo, use:
 No Supabase, novos usuarios entram como `viewer`. Para transformar um usuario em editor, rode no SQL Editor:
 
 ```sql
-update public.users
+update public.catalog_users
 set role = 'editor'
 where email = 'usuario@empresa.com';
 ```
 
-O schema tambem inclui `quotes` e `quote_items` para salvar orcamentos criados a partir do carrinho.
+O schema tambem inclui `catalog_quotes` e `catalog_quote_items` para salvar orcamentos criados a partir do carrinho.
 
 Nas configuracoes gerais, o markup e informado como porcentagem. Exemplo: `100%` significa vender pelo dobro do custo nacionalizado.
