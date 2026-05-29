@@ -832,7 +832,7 @@ label { display: grid; gap: 7px; }
   pointer-events: none;
 }
 .cart-drawer-shell.open {
-  pointer-events: auto;
+  pointer-events: none;
 }
 .cart-drawer-backdrop {
   position: absolute;
@@ -841,8 +841,9 @@ label { display: grid; gap: 7px; }
   height: 100%;
   border: 0;
   border-radius: 0;
-  background: rgba(10, 15, 24, .34);
+  background: transparent;
   opacity: 0;
+  pointer-events: none;
   transform: none;
   transition: opacity .18s ease;
 }
@@ -866,6 +867,7 @@ label { display: grid; gap: 7px; }
   box-shadow: -22px 0 60px rgba(18, 34, 49, .20);
   transform: translateX(104%);
   transition: transform .22s ease;
+  pointer-events: auto;
 }
 .cart-drawer-shell.open .cart-drawer {
   transform: translateX(0);

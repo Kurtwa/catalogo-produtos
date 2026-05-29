@@ -1135,7 +1135,6 @@
     const existing = state.cart.find((item) => item.product_id === productId);
     if (existing) existing.quantity += 1;
     else state.cart.push({ product_id: productId, quantity: 1, note: "" });
-    state.cartDrawerOpen = true;
     state.lastAddedProductId = productId;
     state.message = `${product.code || product.name} adicionado ao carrinho.`;
     render();
