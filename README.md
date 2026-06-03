@@ -130,22 +130,21 @@ Esse enriquecimento mantem os nomes originais em ingles e adiciona termos como `
 
 ## Perfis de acesso
 
-O app agora trabalha com dois perfis:
+O app usa perfis controlados pelo Supabase:
 
-- `editor`: pode cadastrar produtos, fornecedores, PDFs e alterar dados do catalogo.
-- `viewer`: pode visualizar o catalogo, pesquisar e montar carrinho para orcamento.
+- `admin`: gerencia produtos, imagens, usuarios, configuracoes e permissoes.
+- `comercial_interno`: visualiza dados internos liberados.
+- `representante`: visualiza somente valores e dados permitidos para representante.
+- `importador`: visualiza somente valores e dados permitidos para importador.
+- `cliente`: visualiza produtos e monta orcamentos conforme permissoes configuradas.
 
-No modo demo, use o seletor de perfil na barra lateral. No Supabase, novos usuarios entram como `viewer`. Para transformar um usuario em editor, rode no SQL Editor:
-No modo demo, use:
+Novos usuarios entram como `cliente`. Para promover um usuario, prefira a tela **Usuarios** do proprio app usando uma conta `admin`.
 
-- usuario `kurt`, senha `123456`: perfil `editor`
-- usuario `luiz`, senha `123456`: perfil `viewer`
-
-No Supabase, novos usuarios entram como `viewer`. Para transformar um usuario em editor, rode no SQL Editor:
+Em emergencia, tambem e possivel ajustar pelo SQL Editor:
 
 ```sql
-update public.catalog_users
-set role = 'editor'
+update public.catalog_user_profiles
+set role = 'admin', updated_at = now()
 where email = 'usuario@empresa.com';
 ```
 

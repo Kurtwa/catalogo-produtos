@@ -2,7 +2,8 @@
 -- kurt = editor
 -- luiz = visualizador
 --
--- Importante: crie primeiro os usuarios no Supabase Auth com a senha generica desejada.
+-- Arquivo historico de demo. Nao use senhas genericas em producao.
+-- Crie usuarios reais pelo Supabase Auth ou pelo fluxo de cadastro do app.
 -- Depois rode este SQL para ajustar os perfis na tabela publica do app.
 
 insert into public.users (id, email, full_name, role)

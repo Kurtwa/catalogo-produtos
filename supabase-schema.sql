@@ -53,6 +53,7 @@ create table if not exists public.products (
   name text not null,
   code text,
   category text,
+  line text,
   subcategory text,
   description text,
   technical_specs text,

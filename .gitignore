@@ -17,4 +17,7 @@ __pycache__/
 .env
 .env.*
 supabase/.temp/
+supabase/compare_missing_seed_products.sql
+supabase/diagnose_seed_product_sync.sql
+supabase/sync_missing_seed_products.sql
 ~/

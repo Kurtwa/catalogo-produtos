@@ -932,3 +932,31 @@ insert into public.catalog_products (id, supplier_id, name, code, category, subc
 insert into public.catalog_products (id, supplier_id, name, code, category, subcategory, description, technical_specs, original_price, currency, exchange_rate, multiplier_factor, markup, weight, dimensions, material, tags, source_file_id, status) values ('a48bbe43-abec-5928-81f9-7baec841dd89', '914e01f4-1ac2-504d-a999-923e191b7609', '8 Station', 'L1092', 'L', null, '8 Station', '八人站 8 Station N.W / G.W: 1292 Kg / 1392 Kg DIM: 5488*3717*2360 mm CTN: Box 1: 2500*1500*1200 mm Box 2: 2300*1000*500 mm WS: 100 Kg * 8 $2378 87', 2378, 'USD', 5.25, 1.60, 2.00, 1292, '5488*3717*2360 mm', null, array['syt','l'], 'b3a616c5-5607-50d0-89e0-c4625f26dc03', 'pendente') on conflict (id) do update set name = excluded.name, original_price = excluded.original_price, technical_specs = excluded.technical_specs, updated_at = now();
 insert into public.catalog_products (id, supplier_id, name, code, category, subcategory, description, technical_specs, original_price, currency, exchange_rate, multiplier_factor, markup, weight, dimensions, material, tags, source_file_id, status) values ('f392f4fe-33d7-5b4e-92c5-c63327305104', '914e01f4-1ac2-504d-a999-923e191b7609', 'Dual Cable 8 Multi-Station', 'L1092A', 'L', null, 'Dual Cable 8 Multi-Station', '双绳八人站 Dual Cable 8 Multi-Station N.W / G.W: 1330 Kg / 1430 Kg DIM: 5488*3717*2360 mm CTN: Box 1: 2500*1500*1200 mm Box 2: 2300*1000*500 mm WS: 100 Kg * 8 $2398', 2398, 'USD', 5.25, 1.60, 2.00, 1330, '5488*3717*2360 mm', null, array['syt','l'], 'b3a616c5-5607-50d0-89e0-c4625f26dc03', 'pendente') on conflict (id) do update set name = excluded.name, original_price = excluded.original_price, technical_specs = excluded.technical_specs, updated_at = now();
 
+
+-- Normalize Q line treadmill names: keep dimensions and weight in technical fields, not in product name.
+update public.catalog_products
+set name = 'Pet Curved Treadmill',
+    description = 'Pet Curved Treadmill',
+    technical_specs = 'CBM: 0.31; DIM: 1900*540*1500 mm; CTN: 1950*570*280 mm; N.W/G.W: 53 Kg / 64 Kg',
+    weight = 53,
+    dimensions = '1900*540*1500 mm',
+    updated_at = now()
+where code = 'Q28';
+
+update public.catalog_products
+set name = 'Pet Curved Treadmill',
+    description = 'Pet Curved Treadmill',
+    technical_specs = 'CBM: 0.26; DIM: 1600*540*1300 mm; CTN: 1650*570*280 mm; N.W/G.W: 45 Kg / 56 Kg',
+    weight = 45,
+    dimensions = '1600*540*1300 mm',
+    updated_at = now()
+where code = 'Q29';
+
+update public.catalog_products
+set name = 'Pet Curved Treadmill',
+    description = 'Pet Curved Treadmill',
+    technical_specs = 'CBM: 0.18; DIM: 1100*540*1000 mm; CTN: 1150*570*280 mm; N.W/G.W: 28 Kg / 39 Kg',
+    weight = 28,
+    dimensions = '1100*540*1000 mm',
+    updated_at = now()
+where code = 'Q30';
