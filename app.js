@@ -742,12 +742,24 @@
 
   function authErrorMessage(error) {
     const message = String(error?.message || "Nao foi possivel concluir a solicitacao.");
+    const code = String(error?.code || error?.error_code || "").toLowerCase();
     const normalized = message.toLowerCase();
+    if (code === "email_address_invalid" || normalized.includes("email address") || normalized.includes("invalid email")) return "Este provedor de email nao foi aceito. Use um email real e ativo, como Gmail, Outlook ou email profissional.";
     if (normalized.includes("already") || normalized.includes("registered")) return "Este email ja possui cadastro. Use Entrar ou recupere a senha.";
     if (normalized.includes("invalid login")) return "Email ou senha incorretos.";
+    if (normalized.includes("email not confirmed") || normalized.includes("not confirmed")) return "Confirme seu email antes de entrar. Verifique sua caixa de entrada e spam.";
     if (normalized.includes("email")) return "Verifique se o email foi digitado corretamente.";
     if (normalized.includes("password")) return "A senha nao atende aos requisitos de seguranca.";
     return message;
+  }
+
+  function authRedirectUrl() {
+    try {
+      if (window.location.protocol === "file:") return undefined;
+      return new URL("./", window.location.href).href;
+    } catch (_error) {
+      return undefined;
+    }
   }
 
   function normalizeText(value) {
@@ -2219,6 +2231,7 @@
       email: data.email,
       password: data.password,
       options: {
+        emailRedirectTo: authRedirectUrl(),
         data: {
           full_name: data.full_name || "",
           company_name: data.company_name || "",
