@@ -20,6 +20,9 @@
     ...(config.tables || {}),
   };
   let productRefreshTimer;
+  let productLoadObserver;
+  const productBatchSize = 60;
+  const catalogCacheVersion = "20260603-v1";
   const defaultSettings = {
     usdToBrl: Number(config.usdToBrl || 5.25),
     usdToCny: Number(config.usdToCny || 7.24),
@@ -186,6 +189,7 @@
     remoteLoading: Boolean(client),
     view: isConfigured ? "login" : "dashboard",
     productViewMode: "cards",
+    productDisplayLimit: productBatchSize,
     query: "",
     filters: { category: "", line: "", supplier_id: "", status: "", tag: "", min: "", max: "" },
     selectedProductId: "prod-1",
@@ -940,10 +944,78 @@
     ]);
   }
 
+  function catalogCacheKey() {
+    if (!state.session?.user?.id) return "";
+    return `gr8-catalog-cache:${catalogCacheVersion}:${state.session.user.id}:${normalizedRole()}`;
+  }
+
+  function readCatalogCache() {
+    try {
+      const key = catalogCacheKey();
+      if (!key) return null;
+      const cached = JSON.parse(window.localStorage?.getItem(key) || "null");
+      if (!cached?.products?.length) return null;
+      return cached;
+    } catch (error) {
+      console.warn("Falha ao ler cache do catalogo", error);
+      return null;
+    }
+  }
+
+  function writeCatalogCache() {
+    try {
+      const key = catalogCacheKey();
+      if (!key) return;
+      const payload = {
+        cachedAt: Date.now(),
+        suppliers: state.suppliers,
+        products: state.products,
+        roleRules: state.roleRules,
+        settings: state.settings,
+      };
+      window.localStorage?.setItem(key, JSON.stringify(payload));
+    } catch (error) {
+      console.warn("Falha ao salvar cache do catalogo", error);
+    }
+  }
+
+  function hydrateCatalogFromCache(cached) {
+    if (!cached?.products?.length) return false;
+    state.suppliers = (cached.suppliers || []).map(cleanSupplier);
+    state.roleRules = cached.roleRules || {};
+    if (cached.settings) {
+      state.settings = { ...state.settings, ...cached.settings };
+      syncConverterFromUsd(state.converter.usd);
+    }
+    state.products = (cached.products || []).map((product) => {
+      const galleryItems = product.galleryItems?.length
+        ? product.galleryItems
+        : (product.gallery || []).map((url) => ({ url, path: url }));
+      const primaryImage = galleryItems[0]?.url || product.image_url || "";
+      return {
+        ...cleanProduct(product),
+        gallery: galleryItems.map((item) => item.url),
+        galleryItems,
+        image_url: primaryImage,
+      };
+    });
+    resetProductDisplayLimit();
+    return true;
+  }
+
+  function showCatalogCacheIfAvailable() {
+    const cached = readCatalogCache();
+    const usedCache = hydrateCatalogFromCache(cached);
+    if (!usedCache) return false;
+    state.remoteLoading = false;
+    render();
+    return true;
+  }
+
   async function loadRemoteData() {
     if (!client) return;
     const isAuthenticated = Boolean(state.session);
-    state.remoteLoading = isAuthenticated;
+    state.remoteLoading = isAuthenticated && !state.products.length;
     if (!isAuthenticated) {
       state.profileRole = "cliente";
       state.devProfileRole = "";
@@ -988,6 +1060,9 @@
     } else {
       state.profileRole = "cliente";
     }
+
+    showCatalogCacheIfAvailable();
+
     const [suppliers, productsRpc, images, priceRules, userProfiles] = await Promise.all([
       canViewSupplier() ? client.from(tables.suppliers).select("*").order("name") : Promise.resolve({ data: [], error: null }),
       client.rpc("get_visible_products_for_current_user"),
@@ -1032,6 +1107,7 @@
       };
     });
     await loadSavedQuotes();
+    writeCatalogCache();
     state.remoteLoading = false;
     render();
   }
@@ -1108,8 +1184,10 @@
         state.profileRole = fallbackRoleFromSession();
         if (state.view === "login") state.view = "dashboard";
         state.authReady = true;
-        state.remoteLoading = true;
-        render();
+        if (!showCatalogCacheIfAvailable()) {
+          state.remoteLoading = true;
+          render();
+        }
         await withTimeout(ensureUserProfile(), 12000, "A verificacao do perfil");
       } else {
         state.profileRole = "cliente";
@@ -1142,8 +1220,10 @@
           state.profileRole = fallbackRoleFromSession();
           if (state.view === "login") state.view = "dashboard";
           state.authReady = true;
-          state.remoteLoading = true;
-          render();
+          if (!showCatalogCacheIfAvailable()) {
+            state.remoteLoading = true;
+            render();
+          }
           await withTimeout(ensureUserProfile(), 12000, "A verificacao do perfil");
         } else {
           state.profileRole = "cliente";
@@ -1388,11 +1468,14 @@
   function productResults() {
     const products = getProducts();
     const total = state.products.length;
+    const displayLimit = Math.min(Math.max(Number(state.productDisplayLimit || productBatchSize), productBatchSize), products.length);
+    const visibleProducts = products.slice(0, displayLimit);
+    const hasMoreProducts = visibleProducts.length < products.length;
     return `
       <div class="product-toolbar">
         <div class="result-count">
           <strong>${products.length}</strong>
-          <span>${products.length === 1 ? "item encontrado" : "itens encontrados"}${hasActiveProductFilters() ? " com os filtros atuais" : ` de ${total}`}</span>
+          <span>${products.length === 1 ? "item encontrado" : "itens encontrados"}${hasActiveProductFilters() ? " com os filtros atuais" : ` de ${total}`}${products.length ? ` · exibindo ${visibleProducts.length}` : ""}</span>
         </div>
         <div class="view-toggle" role="group" aria-label="Tipo de visualizacao">
           <button class="${state.productViewMode === "table" ? "active" : ""}" data-view-mode="table">${withIcon("list", "Linhas")}</button>
@@ -1404,11 +1487,27 @@
         <div class="table-wrap">
           <table>
             <thead><tr><th>Produto</th><th>Categoria</th><th>Linha</th>${canViewSupplier() ? "<th>Fornecedor</th>" : ""}<th>Preco</th>${canViewStatus() ? "<th>Status</th>" : ""}<th class="actions-col"></th></tr></thead>
-            <tbody>${products.map(productRow).join("")}</tbody>
+            <tbody>${visibleProducts.map(productRow).join("")}</tbody>
           </table>
         </div>` : `
-        <div class="card-grid">${products.map(productCard).join("")}</div>
-      `}`;
+        <div class="card-grid">${visibleProducts.map(productCard).join("")}</div>
+      `}
+      ${hasMoreProducts ? `
+        <div class="load-more-products" data-load-more-sentinel>
+          <button type="button" data-load-more-products>${withIcon("plus", `Carregar mais ${Math.min(productBatchSize, products.length - visibleProducts.length)}`)}</button>
+          <small>${visibleProducts.length} de ${products.length} produtos exibidos</small>
+        </div>` : ""}`;
+  }
+
+  function resetProductDisplayLimit() {
+    state.productDisplayLimit = productBatchSize;
+  }
+
+  function loadMoreProducts() {
+    const total = getProducts().length;
+    if (state.productDisplayLimit >= total) return;
+    state.productDisplayLimit = Math.min(total, Number(state.productDisplayLimit || productBatchSize) + productBatchSize);
+    refreshProductResults();
   }
 
   function hasActiveProductFilters() {
@@ -1424,6 +1523,7 @@
     if (clearButton) clearButton.disabled = !hasActiveProductFilters();
     bindResultEvents(container);
     refreshIcons();
+    setupProductLoadObserver();
   }
 
   function scheduleProductResultsRefresh() {
@@ -1486,17 +1586,20 @@
   function clearFilters() {
     state.filters = { category: "", line: "", supplier_id: "", status: "", tag: "", min: "", max: "" };
     state.query = "";
+    resetProductDisplayLimit();
     render();
   }
 
   function clearFilter(key) {
     if (key === "query") {
       state.query = "";
+      resetProductDisplayLimit();
       render();
       return;
     }
     if (!(key in state.filters)) return;
     state.filters[key] = "";
+    resetProductDisplayLimit();
     render();
   }
 
@@ -1505,7 +1608,9 @@
   }
 
   function productThumb(product) {
-    if (canViewImages() && product.image_url) return `<img src="${escapeHtml(product.image_url)}" alt="${escapeHtml(product.name)}">`;
+    if (canViewImages() && product.image_url) {
+      return `<span class="image-fit" role="img" aria-label="${escapeHtml(product.name)}" style="background-image: url('${escapeHtml(product.image_url)}');"></span>`;
+    }
     return `<span>${escapeHtml(String(product.name || product.code || "?").slice(0, 2).toUpperCase())}</span>`;
   }
 
@@ -1602,7 +1707,9 @@
     const permissions = currentPermissions();
     const gallery = productGallery(product);
     const activeImage = gallery.includes(state.selectedDetailImage) ? state.selectedDetailImage : gallery[0] || product.image_url || "";
-    const activeThumb = activeImage ? `<img src="${escapeHtml(activeImage)}" alt="${escapeHtml(product.name)}">` : thumb;
+    const activeThumb = activeImage
+      ? `<img src="${escapeHtml(activeImage)}" alt="${escapeHtml(product.name)}">`
+      : thumb;
     const heroImage = canViewImages() && activeImage
       ? `<div class="detail-media">
           <button class="hero-image image-zoom-trigger" type="button" data-image-zoom="${escapeHtml(activeImage)}" data-image-title="${escapeHtml(product.name)}" title="Ampliar imagem" aria-label="Ampliar imagem de ${escapeHtml(product.name)}">${activeThumb}</button>
@@ -2840,6 +2947,17 @@
     }));
     scope.querySelectorAll("[data-view-mode]").forEach((button) => button.addEventListener("click", () => { state.productViewMode = button.dataset.viewMode; refreshProductResults(); }));
     scope.querySelectorAll("[data-clear-filter]").forEach((button) => button.addEventListener("click", () => clearFilter(button.dataset.clearFilter)));
+    scope.querySelectorAll("[data-load-more-products]").forEach((button) => button.addEventListener("click", loadMoreProducts));
+  }
+
+  function setupProductLoadObserver() {
+    productLoadObserver?.disconnect();
+    const sentinel = root.querySelector("[data-load-more-sentinel]");
+    if (!sentinel || !("IntersectionObserver" in window)) return;
+    productLoadObserver = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) loadMoreProducts();
+    }, { rootMargin: "640px 0px" });
+    productLoadObserver.observe(sentinel);
   }
 
   function openProductDetails(productId, detailImage = "") {
@@ -2945,8 +3063,8 @@
     root.querySelectorAll("[data-user-deactivate]").forEach((button) => button.addEventListener("click", () => updateUserProfile(button.dataset.userDeactivate, { is_active: false })));
     root.querySelectorAll("[data-user-activate]").forEach((button) => button.addEventListener("click", () => updateUserProfile(button.dataset.userActivate, { role: selectedUserRole(button.dataset.userActivate), is_active: true })));
     root.querySelector("[data-clear-message]")?.addEventListener("click", () => { state.message = ""; render(); });
-    root.querySelector("#search-input")?.addEventListener("input", (event) => { state.query = event.target.value; scheduleProductResultsRefresh(); });
-    root.querySelectorAll("[data-filter]").forEach((input) => input.addEventListener("input", (event) => { state.filters[input.dataset.filter] = event.target.value; scheduleProductResultsRefresh(); }));
+    root.querySelector("#search-input")?.addEventListener("input", (event) => { state.query = event.target.value; resetProductDisplayLimit(); scheduleProductResultsRefresh(); });
+    root.querySelectorAll("[data-filter]").forEach((input) => input.addEventListener("input", (event) => { state.filters[input.dataset.filter] = event.target.value; resetProductDisplayLimit(); scheduleProductResultsRefresh(); }));
     root.querySelector("[data-clear-filters]")?.addEventListener("click", clearFilters);
     root.querySelectorAll("[data-role-switch]").forEach((button) => button.addEventListener("click", () => switchProfile(button.dataset.roleSwitch)));
     root.querySelectorAll("[data-auth-mode]").forEach((button) => button.addEventListener("click", () => {
@@ -3034,6 +3152,7 @@
     root.innerHTML = state.view === "login" && !state.session ? content : shell(content);
     bindEvents();
     refreshIcons();
+    setupProductLoadObserver();
   }
 
   render();
